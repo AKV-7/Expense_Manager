@@ -79,5 +79,3 @@ This approach significantly reduces the number of transactions needed to clear a
 - ✅ Debt simplification
 - 🚧 Payment integration (Razorpay)
 - 🚧 Analytics & reports
-
- 
