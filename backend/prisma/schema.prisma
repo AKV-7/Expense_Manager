@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  passwordHash          String   @map("password_hash")
+  name                  String
+  profileImageUrl       String?  @map("profile_image_url")
+  phone                 String?  @unique
+  upiId                 String?  @map("upi_id")
+  emailVerified         Boolean  @default(false) @map("email_verified")
+  currencyPreference    String   @default("INR") @map("currency_preference")
+  
+  // Email Notification Preferences
+  emailNotifications    Boolean  @default(true) @map("email_notifications")
+  expenseNotifications  Boolean  @default(true) @map("expense_notifications")
+  paymentNotifications  Boolean  @default(true) @map("payment_notifications")
+  
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  members             Member[]
+  createdGroups       Group[]  @relation("GroupCreator")
+  createdExpenses     Expense[] @relation("ExpenseCreator")
+  expenseParticipants ExpenseParticipant[]
+  balancesOwed        Balance[] @relation("UserOwes")
+  balancesOwedTo      Balance[] @relation("UserOwedTo")
+  paymentsFrom        Payment[] @relation("PaymentFrom")
+  paymentsTo          Payment[] @relation("PaymentTo")
+  
+  // Recurring expenses
+  createdRecurringExpenses RecurringExpense[] @relation("RecurringCreator")
+  recurringAsPayer         RecurringExpense[] @relation("RecurringPayer")
+  
+  // Receipts
+  receipts Receipt[]
+
+  @@map("users")
+}
+
+model Group {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  imageUrl        String?  @map("image_url")
+  category        String   @default("other")
+  defaultCurrency String   @default("INR") @map("default_currency")
+  createdBy       String   @map("created_by")
+  isArchived      Boolean  @default(false) @map("is_archived")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  creator  User      @relation("GroupCreator", fields: [createdBy], references: [id])
+  members  Member[]
+  expenses Expense[]
+  balances Balance[]
+  payments Payment[]
+  recurringExpenses RecurringExpense[]
+
+  @@map("groups")
+}
+
+model Member {
+  id       String   @id @default(uuid())
+  groupId  String   @map("group_id")
+  userId   String   @map("user_id")
+  role     String   @default("member")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("members")
+}
+
+model Expense {
+  id               String   @id @default(uuid())
+  groupId          String   @map("group_id")
+  description      String
+  amount           Decimal
+  currency         String   @default("INR")
+  date             DateTime @default(now())
+  category         String   @default("other")
+  splitType        String   @map("split_type") @default("equal")
+  notes            String?
+  receiptImageUrl  String?  @map("receipt_image_url")
+  isSettled        Boolean  @default(false) @map("is_settled")
+  createdBy        String   @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  group        Group                @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator      User                 @relation("ExpenseCreator", fields: [createdBy], references: [id])
+  participants ExpenseParticipant[]
+
+  @@map("expenses")
+}
+
+model ExpenseParticipant {
+  id              String  @id @default(uuid())
+  expenseId       String  @map("expense_id")
+  userId          String  @map("user_id")
+  paidAmount      Decimal @default(0) @map("paid_amount")
+  owedAmount      Decimal @default(0) @map("owed_amount")
+  sharePercentage Decimal? @map("share_percentage")
+  shareCount      Int?    @map("share_count")
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, userId])
+  @@map("expense_participants")
+}
+
+model Balance {
+  id            String   @id @default(uuid())
+  groupId       String   @map("group_id")
+  userId        String   @map("user_id")
+  owesToUserId  String   @map("owes_to_user_id")
+  amount        Decimal
+  currency      String   @default("INR")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  group       Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User  @relation("UserOwes", fields: [userId], references: [id], onDelete: Cascade)
+  owesToUser  User  @relation("UserOwedTo", fields: [owesToUserId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId, owesToUserId])
+  @@map("balances")
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  paymentId       String   @unique @map("payment_id")
+  groupId         String   @map("group_id")
+  fromUserId      String   @map("from_user_id")
+  toUserId        String   @map("to_user_id")
+  amount          Decimal
+  currency        String   @default("INR")
+  paymentMethod   String   @default("cash") @map("payment_method")
+  transactionId   String?  @map("transaction_id")
+  status          String   @default("completed")
+  notes           String?
+  paymentDate     DateTime @default(now()) @map("payment_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromUser User  @relation("PaymentFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User  @relation("PaymentTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model RecurringExpense {
+  id            String   @id @default(uuid())
+  groupId       String   @map("group_id")
+  createdBy     String   @map("created_by")
+  
+  title         String
+  amount        Decimal
+  category      String?
+  payerId       String   @map("payer_id")
+  
+  splitType     String   @default("equal") @map("split_type")
+  splitData     String?  @map("split_data") // JSON string for participant shares
+  
+  frequency     String   // "daily" | "weekly" | "monthly" | "yearly"
+  interval      Int      @default(1) // Every X days/weeks/months
+  startDate     DateTime @map("start_date")
+  endDate       DateTime? @map("end_date")
+  nextRunDate   DateTime @map("next_run_date")
+  
+  active        Boolean  @default(true)
+  timezone      String   @default("Asia/Kolkata")
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  creator User  @relation("RecurringCreator", fields: [createdBy], references: [id])
+  payer   User  @relation("RecurringPayer", fields: [payerId], references: [id])
+  
+  @@index([groupId])
+  @@index([nextRunDate, active])
+  @@index([createdBy])
+  @@map("recurring_expenses")
+}
+
+model Receipt {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  imageUrl        String   @map("image_url")
+  imagePath       String   @map("image_path")
+  originalName    String   @map("original_name")
+  mimeType        String   @map("mime_type")
+  fileSize        Int      @map("file_size")
+  
+  // OCR Results
+  ocrStatus       String   @default("pending") @map("ocr_status") // pending, processing, completed, failed
+  merchantName    String?  @map("merchant_name")
+  totalAmount     Decimal? @map("total_amount")
+  currency        String?
+  date            DateTime?
+  items           String?  // JSON string of line items
+  rawText         String?  @map("raw_text")
+  confidence      Decimal? // OCR confidence score (0-1)
+  
+  // Metadata
+  expenseId       String?  @unique @map("expense_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([ocrStatus])
+  @@map("receipts")
+}
